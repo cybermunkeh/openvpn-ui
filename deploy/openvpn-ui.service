@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenVPN Control Web Interface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/openvpn-ui
+Environment=OPENVPN_UI_STATIC_DIR=/opt/openvpn-ui/app/dist/client
+Environment=OPENVPN_UI_DATA_DIR=/opt/openvpn-ui/data
+ExecStart=/opt/openvpn-ui/.venv/bin/uvicorn openvpn_ui.app:app --app-dir /opt/openvpn-ui/backend --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
