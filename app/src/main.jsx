@@ -8,6 +8,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import { App } from "./App.jsx";
 import "./styles.css";
 import "./operations.css";
+import "./solidstate-theme.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

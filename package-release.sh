@@ -18,7 +18,7 @@ for required in \
 done
 
 mkdir -p "$OUTPUT_DIR"
-tar -C "$ROOT" -czf "$ARCHIVE" \
+tar -C "$ROOT" --exclude='*/__pycache__' --exclude='*/__pycache__/*' --exclude='*.pyc' -czf "$ARCHIVE" \
   README.md VERSION install.sh \
   backend/openvpn_ui backend/requirements.txt \
   app/dist/client deploy/openvpn-ui.service

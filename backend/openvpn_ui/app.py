@@ -33,7 +33,6 @@ from .pki import (
     reset_managed_openvpn,
     revoke_vpn_user,
 )
-from .ufw import add_ufw_rule, control_ufw, delete_ufw_rule, get_ufw_dashboard
 from .runtime import (
     connect_profile,
     clear_managed_firewall,
@@ -52,7 +51,7 @@ from .runtime import (
 )
 from .store import build_profile_record, ensure_state_dirs, get_group, load_state, save_state
 
-app = FastAPI(title="OpenVPN Control", version="0.1.0")
+app = FastAPI(title="OpenVPN Control", version="0.2.0")
 
 
 def build_dashboard() -> dict[str, Any]:
@@ -110,7 +109,6 @@ def build_dashboard() -> dict[str, Any]:
         "profileGroups": profile_groups,
         "profiles": state["profiles"],
         "pki": get_pki_dashboard(),
-        "ufw": get_ufw_dashboard(),
     }
 
 
@@ -388,44 +386,6 @@ def api_install_pihole(payload: dict[str, Any] = Body(default={})) -> dict[str, 
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"dashboard": build_dashboard(), "pki": pki_dashboard}
-
-
-@app.get("/api/ufw")
-def api_get_ufw() -> dict[str, Any]:
-    return {"ufw": get_ufw_dashboard()}
-
-
-@app.post("/api/ufw/control/{action}")
-def api_control_ufw(action: str) -> dict[str, Any]:
-    try:
-        ufw_dashboard = control_ufw(action)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"dashboard": build_dashboard(), "ufw": ufw_dashboard}
-
-
-@app.post("/api/ufw/rules")
-def api_add_ufw_rule(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    try:
-        ufw_dashboard = add_ufw_rule(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"dashboard": build_dashboard(), "ufw": ufw_dashboard}
-
-
-@app.delete("/api/ufw/rules/{index}")
-def api_delete_ufw_rule(index: int) -> dict[str, Any]:
-    try:
-        ufw_dashboard = delete_ufw_rule(index)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"dashboard": build_dashboard(), "ufw": ufw_dashboard}
 
 
 @app.post("/api/reset")

@@ -141,26 +141,6 @@ export function installPiHole(payload) {
   });
 }
 
-export function controlUfw(action) {
-  return request(`/api/ufw/control/${action}`, {
-    method: "POST",
-  });
-}
-
-export function addUfwRule(payload) {
-  return request("/api/ufw/rules", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(payload),
-  });
-}
-
-export function deleteUfwRule(index) {
-  return request(`/api/ufw/rules/${index}`, {
-    method: "DELETE",
-  });
-}
-
 export function createUser(payload) {
   return request("/api/users", {
     method: "POST",

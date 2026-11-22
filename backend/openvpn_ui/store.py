@@ -26,7 +26,6 @@ DEFAULT_STATE: dict[str, Any] = {
         {"id": "policies", "label": "Policies"},
         {"id": "configuration", "label": "OpenVPN Config"},
         {"id": "diagnostics", "label": "Diagnostics"},
-        {"id": "ufw", "label": "UFW"},
         {"id": "certificates", "label": "Certificates"},
         {"id": "logs", "label": "Logs"},
         {"id": "settings", "label": "Settings"},

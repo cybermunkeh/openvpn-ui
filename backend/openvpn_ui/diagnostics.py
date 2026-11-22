@@ -6,7 +6,6 @@ from typing import Any
 
 from .pki import get_pki_dashboard
 from .runtime import run_command
-from .ufw import get_ufw_dashboard
 
 
 def _check(check_id: str, title: str, status: str, detail: str, evidence: str = "") -> dict[str, str]:
@@ -26,7 +25,6 @@ def _command_evidence(stdout: str, stderr: str) -> str:
 def run_network_diagnostics() -> dict[str, Any]:
     started = time.monotonic()
     pki = get_pki_dashboard()
-    ufw = get_ufw_dashboard()
     checks: list[dict[str, str]] = []
 
     server_active = pki["serverServiceState"] == "active"
@@ -38,13 +36,13 @@ def run_network_diagnostics() -> dict[str, Any]:
         f"{pki['serverServiceName']}: {pki['serverServiceState']}",
     ))
 
-    forwarding_ready = bool(pki["forwardingEnabled"] and pki["natConfigured"] and pki["vpnRoutingAllowed"])
+    forwarding_ready = bool(pki["forwardingEnabled"] and pki["natConfigured"])
     checks.append(_check(
         "forwarding-nat",
-        "Forwarding, NAT and routed firewall",
+        "Forwarding and NAT",
         "pass" if forwarding_ready else "fail",
-        "VPN packets can leave the host and return through the tunnel." if forwarding_ready else "At least one of IPv4 forwarding, NAT or routed firewall policy is missing.",
-        f"forwarding={pki['forwardingEnabled']} nat={pki['natConfigured']} ufw-route={pki['vpnRoutingAllowed']}",
+        "VPN packets can leave the host and return through the tunnel." if forwarding_ready else "IPv4 forwarding or managed NAT rules are missing.",
+        f"forwarding={pki['forwardingEnabled']} nat={pki['natConfigured']}",
     ))
 
     route = run_command(["ip", "-4", "route", "show", "default"], check=False, timeout=4)
@@ -124,15 +122,6 @@ def run_network_diagnostics() -> dict[str, Any]:
         "pass" if runtime_ready and route_coverage else "warn",
         "Runtime status and client routes are consistent." if runtime_ready and route_coverage else "Runtime status is missing or at least one connected client has no routed address.",
         f"available={runtime_ready} connected={runtime['connectedClients']} routed={runtime['routedClients']}",
-    ))
-
-    ufw_ready = not ufw["installed"] or ufw["status"] == "active"
-    checks.append(_check(
-        "ufw",
-        "Host firewall",
-        "pass" if ufw_ready else "warn",
-        "UFW is active and reporting its rules." if ufw["installed"] and ufw_ready else "UFW is not active; managed iptables rules may still exist, but host policy is incomplete.",
-        f"installed={ufw['installed']} status={ufw['status']} rules={ufw['ruleCount']}",
     ))
 
     summary = {

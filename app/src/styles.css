@@ -1852,48 +1852,6 @@ button {
   gap: 8px;
 }
 
-.ufw-preview {
-  padding: 12px 14px;
-  border: 1px dashed rgba(18, 57, 93, 0.2);
-  border-radius: 14px;
-  background: rgba(11, 40, 70, 0.03);
-  color: var(--muted);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.ufw-rules-card,
-.ufw-rule-list,
-.ufw-rule-copy {
-  display: grid;
-}
-
-.ufw-rule-list {
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.ufw-rule-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(11, 40, 70, 0.05);
-}
-
-.ufw-rule-copy {
-  gap: 4px;
-}
-
-.ufw-rule-copy span {
-  color: var(--muted);
-  font-size: 0.84rem;
-  word-break: break-word;
-}
-
 .mini-table-row {
   gap: 10px;
   padding: 8px 0;
@@ -2595,11 +2553,6 @@ button {
   .detail-panel,
   .modal-two-col {
     grid-template-columns: 1fr;
-  }
-
-  .ufw-rule-row {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .dashboard-hero-card {

@@ -2,6 +2,8 @@
 
 Weboberfläche zur Verwaltung lokaler OpenVPN-Profile und ausgewählter Serverfunktionen. Sie läuft als systemd-Dienst auf Linux. Node.js wird nur benötigt, wenn du die Frontend-Dateien selbst neu bauen willst.
 
+Das Release enthält ausschließlich OpenVPN UI mit Weboberfläche, Backend und Installer. Eine separate UFW-/Firewall-Verwaltungsoberfläche ist nicht enthalten.
+
 ## Installation
 
 Als `root` oder mit `sudo`:
@@ -13,7 +15,9 @@ cd openvpn-ui
 sudo bash install.sh
 ```
 
-Der Installer unterstützt Linux mit systemd und `apt`, `dnf`, `yum` oder `zypper`. Er installiert Python, benötigte Systempakete und OpenVPN, falls der Befehl `openvpn` noch fehlt. Eine vorhandene OpenVPN-Konfiguration wird nicht geändert und der OpenVPN-Dienst wird nicht aktiviert oder gestartet. Die Installation des Pakets allein richtet keinen VPN-Server ein.
+Der Installer läuft ohne interaktive Rückfragen, wenn er mit Root-Rechten gestartet wird. Er unterstützt Linux mit systemd und `apt`, `dnf`, `yum` oder `zypper`. Er aktualisiert die Paketlisten, installiert Python, OpenSSL, Netzwerkwerkzeuge, `iptables`, `curl` und OpenVPN, falls der Befehl `openvpn` noch fehlt. Danach richtet er die Python-Umgebung, die Anwendung und den systemd-Dienst ein, startet den Dienst und prüft die lokale HTTP-Erreichbarkeit. Eine vorhandene Installation unter `/opt/openvpn-ui` muss vorher gesichert und entfernt werden; ein automatisches Update ist derzeit nicht enthalten.
+
+Der Installer installiert OpenVPN bei Bedarf, konfiguriert aber keinen VPN-Server und ändert keine vorhandene OpenVPN-Konfiguration. `iptables` wird für die später optional nutzbare VPN-NAT-/Weiterleitungsfunktion der Anwendung installiert; UFW wird nicht installiert. Die Installation richtet allein die Weboberfläche ein.
 
 Die Weboberfläche bindet ausschließlich an `127.0.0.1:8080`. Auf dem eigenen Rechner lässt sie sich sicher per SSH-Tunnel öffnen:
 

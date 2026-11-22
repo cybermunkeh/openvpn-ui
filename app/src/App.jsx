@@ -2,14 +2,11 @@ import { startTransition, useEffect, useState } from "react";
 import { LiveChart } from "./LiveChart.jsx";
 import { OpenVpnConfigurationView } from "./OpenVpnConfigurationView.jsx";
 import {
-  addUfwRule,
   configurePkiDns,
   controlServer,
-  controlUfw,
   connectProfile,
   createProfile,
   createUser,
-  deleteUfwRule,
   deleteProfile,
   deleteUser,
   disconnectProfile,
@@ -43,6 +40,7 @@ import IconCloudComputing from "@tabler/icons-react/dist/esm/icons/IconCloudComp
 import IconCode from "@tabler/icons-react/dist/esm/icons/IconCode.mjs";
 import IconDashboard from "@tabler/icons-react/dist/esm/icons/IconDashboard.mjs";
 import IconDeviceLaptop from "@tabler/icons-react/dist/esm/icons/IconDeviceLaptop.mjs";
+import IconDownload from "@tabler/icons-react/dist/esm/icons/IconDownload.mjs";
 import IconFileDescription from "@tabler/icons-react/dist/esm/icons/IconFileDescription.mjs";
 import IconGauge from "@tabler/icons-react/dist/esm/icons/IconGauge.mjs";
 import IconLock from "@tabler/icons-react/dist/esm/icons/IconLock.mjs";
@@ -55,7 +53,6 @@ import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
 import IconServer2 from "@tabler/icons-react/dist/esm/icons/IconServer2.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconShieldCheck from "@tabler/icons-react/dist/esm/icons/IconShieldCheck.mjs";
-import IconShieldLock from "@tabler/icons-react/dist/esm/icons/IconShieldLock.mjs";
 import IconStethoscope from "@tabler/icons-react/dist/esm/icons/IconStethoscope.mjs";
 import IconTopologyComplex from "@tabler/icons-react/dist/esm/icons/IconTopologyComplex.mjs";
 import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
@@ -78,20 +75,36 @@ const navIcons = {
   topology: IconTopologyComplex,
   profiles: IconFileDescription,
   policies: IconMap2,
-  ufw: IconShieldLock,
   certificates: IconCertificate,
   logs: IconFileDescription,
   settings: IconSettings,
 };
 
+const navLabelsGerman = {
+  dashboard: "Betrieb",
+  topology: "Topologie",
+  profiles: "Profile",
+  policies: "Richtlinien",
+  configuration: "OpenVPN-Konfig",
+  diagnostics: "Diagnose",
+  certificates: "Zertifikate",
+  logs: "Protokolle",
+  settings: "Einstellungen",
+};
+
+const profileGroupLabelsGerman = {
+  hub: "Zentrale",
+  "remote-sites": "Standorte",
+  "road-warriors": "Mobile Geräte",
+};
+
 const viewTitles = {
-  dashboard: "Overview",
+  dashboard: "VPN-Betrieb",
   configuration: "OpenVPN Configuration Studio",
   diagnostics: "VPN Diagnostics",
   topology: "Network Topology Workspace",
   profiles: "Profiles Workspace",
   policies: "Policies Workspace",
-  ufw: "UFW Firewall Workspace",
   certificates: "Certificate Workspace",
   logs: "Runtime Logs",
   settings: "Runtime Settings",
@@ -134,7 +147,6 @@ const emptyDashboard = {
     { id: "policies", label: "Policies" },
     { id: "configuration", label: "OpenVPN Config" },
     { id: "diagnostics", label: "Diagnostics" },
-    { id: "ufw", label: "UFW" },
     { id: "certificates", label: "Certificates" },
     { id: "logs", label: "Logs" },
     { id: "settings", label: "Settings" },
@@ -150,8 +162,6 @@ const emptyDashboard = {
     serverConfigured: false,
     serverServiceName: "openvpn-server@codex-server.service",
     serverServiceState: "inactive",
-    firewallServiceName: "openvpn-ui-firewall.service",
-    firewallServiceState: "inactive",
     serverName: "codex-server",
     publicHost: "",
     protocol: "udp",
@@ -165,12 +175,6 @@ const emptyDashboard = {
     piHoleServiceState: "not-installed",
     piHoleUpstreamDns: ["1.1.1.1", "1.0.0.1"],
     egressInterface: "",
-    firewallBackend: "unavailable",
-    vpnPortAllowed: false,
-    uiPortAllowed: false,
-    piHoleUiAllowed: false,
-    vpnDnsAllowed: false,
-    vpnRoutingAllowed: false,
     forwardingEnabled: false,
     natConfigured: false,
     createdAt: null,
@@ -196,19 +200,6 @@ const emptyDashboard = {
     },
     telemetry: emptySystemTelemetry,
     users: [],
-  },
-  ufw: {
-    installed: false,
-    available: false,
-    status: "not-installed",
-    logging: "unknown",
-    defaultIncoming: "unknown",
-    defaultOutgoing: "unknown",
-    defaultRouted: "unknown",
-    newProfiles: "unknown",
-    ruleCount: 0,
-    rules: [],
-    rawStatus: "",
   },
 };
 
@@ -589,26 +580,24 @@ function profileSummary(profile) {
   return "Disconnected";
 }
 
-function isIssuedProfile(profile) {
-  return profile?.profileRole === "issued-client";
+function profileSummaryGerman(profile) {
+  if (profile.status === "connected") return "Verbunden";
+  if (profile.status === "connecting") return "Verbindet …";
+  if (profile.profileRole === "issued-client") return "Bereit zum Download";
+  if (profile.configState === "draft") return "Entwurf";
+  if (profile.configState === "imported") return "Importiertes Profil";
+  return "Getrennt";
 }
 
-function buildUfwPreview(rule) {
-  const mode = rule.mode === "route" ? "ufw route" : "ufw";
-  const action = rule.action || "allow";
-  const source = rule.source?.trim() || "any";
-  const destination = rule.destination?.trim() || "any";
-  const segments = [mode, action];
+function formatDashboardTimestamp(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
 
-  if (rule.mode === "route") {
-    if (rule.inInterface?.trim()) segments.push("in on", rule.inInterface.trim());
-    if (rule.outInterface?.trim()) segments.push("out on", rule.outInterface.trim());
-  }
-
-  segments.push("from", source, "to", destination);
-  if (rule.port?.trim()) segments.push("port", rule.port.trim());
-  if (rule.protocol && rule.protocol !== "any") segments.push("proto", rule.protocol);
-  return segments.join(" ");
+function isIssuedProfile(profile) {
+  return profile?.profileRole === "issued-client";
 }
 
 function TopologyNode({ title, subtitle, icon: Icon, active = false, metric }) {
@@ -718,22 +707,10 @@ export function App() {
   const [userForm, setUserForm] = useState({
     name: "",
   });
-  const [ufwRuleForm, setUfwRuleForm] = useState({
-    mode: "host",
-    action: "allow",
-    protocol: "tcp",
-    port: "",
-    source: "any",
-    destination: "any",
-    inInterface: "tun0",
-    outInterface: "",
-  });
-
   const allProfiles = Object.values(dashboard.profiles);
   const selectedProfile = dashboard.selectedProfileId ? dashboard.profiles[dashboard.selectedProfileId] : null;
   const pki = dashboard.pki ?? emptyDashboard.pki;
   const runtime = pki.runtime ?? emptyDashboard.pki.runtime;
-  const ufw = dashboard.ufw ?? emptyDashboard.ufw;
   const otherProfiles = allProfiles.filter((profile) => profile.id !== dashboard.selectedProfileId);
   const profileCount = allProfiles.length;
   const connectedCount = allProfiles.filter((profile) => profile.status === "connected").length;
@@ -1132,56 +1109,6 @@ export function App() {
     } catch (error) {
       await refreshDashboard();
       setStatusMessage(error instanceof Error ? error.message : "OpenVPN server action failed.");
-    }
-  }
-
-  async function handleUfwControl(action) {
-    try {
-      const response = await controlUfw(action);
-      if (response?.dashboard) {
-        setDashboard(response.dashboard);
-      }
-      setMode("server");
-      setStatusMessage(`UFW ${action} completed.`);
-    } catch (error) {
-      await refreshDashboard();
-      setStatusMessage(error instanceof Error ? error.message : "UFW action failed.");
-    }
-  }
-
-  async function handleCreateUfwRule(event) {
-    event.preventDefault();
-
-    try {
-      const response = await addUfwRule(ufwRuleForm);
-      if (response?.dashboard) {
-        setDashboard(response.dashboard);
-      }
-      setMode("server");
-      setStatusMessage(`UFW rule added: ${buildUfwPreview(ufwRuleForm)}.`);
-      setUfwRuleForm((current) => ({
-        ...current,
-        port: "",
-        source: current.mode === "route" ? current.source : "any",
-        destination: "any",
-      }));
-    } catch (error) {
-      await refreshDashboard();
-      setStatusMessage(error instanceof Error ? error.message : "UFW rule creation failed.");
-    }
-  }
-
-  async function handleDeleteUfwRule(index) {
-    try {
-      const response = await deleteUfwRule(index);
-      if (response?.dashboard) {
-        setDashboard(response.dashboard);
-      }
-      setMode("server");
-      setStatusMessage(`UFW rule ${index} removed.`);
-    } catch (error) {
-      await refreshDashboard();
-      setStatusMessage(error instanceof Error ? error.message : "UFW rule deletion failed.");
     }
   }
 
@@ -1771,8 +1698,6 @@ export function App() {
               <dl className="detail-grid compact-grid">
                 <div><dt>Service</dt><dd>{pki.serverServiceName}</dd></div>
                 <div><dt>Status</dt><dd>{pki.serverServiceState}</dd></div>
-                <div><dt>Firewall Service</dt><dd>{pki.firewallServiceState}</dd></div>
-                <div><dt>NAT Backend</dt><dd>{pki.firewallBackend}</dd></div>
                 <div><dt>Public Host</dt><dd>{pki.publicHost}</dd></div>
                 <div><dt>Protocol</dt><dd>{String(pki.protocol).toUpperCase()}</dd></div>
                 <div><dt>Port</dt><dd>{pki.port}</dd></div>
@@ -1782,11 +1707,6 @@ export function App() {
                 <div><dt>VPN Gateway DNS</dt><dd>{pki.vpnGatewayDns}</dd></div>
                 <div><dt>Pi-hole</dt><dd>{pki.piHoleInstalled ? pki.piHoleServiceState : "Not installed"}</dd></div>
                 <div><dt>Egress Interface</dt><dd>{pki.egressInterface || "Unavailable"}</dd></div>
-                <div><dt>VPN Port Firewall</dt><dd>{pki.vpnPortAllowed == null ? "External firewall · not checked" : pki.vpnPortAllowed ? "Allowed" : "Blocked"}</dd></div>
-                <div><dt>UI via VPN</dt><dd>{pki.uiPortAllowed ? "Allowed" : "Blocked"}</dd></div>
-                <div><dt>Pi-hole UI via VPN</dt><dd>{pki.piHoleUiAllowed ? "Allowed" : "Blocked"}</dd></div>
-                <div><dt>DNS via VPN</dt><dd>{pki.vpnDnsAllowed ? "Allowed" : "Blocked"}</dd></div>
-                <div><dt>VPN Routing Firewall</dt><dd>{pki.vpnRoutingAllowed ? "Allowed" : "Blocked"}</dd></div>
                 <div><dt>IPv4 Forwarding</dt><dd>{pki.forwardingEnabled ? "Enabled" : "Disabled"}</dd></div>
                 <div><dt>Egress NAT</dt><dd>{pki.natConfigured ? "Configured" : "Missing"}</dd></div>
                 <div><dt>Created</dt><dd>{pki.createdAt ?? "Unavailable"}</dd></div>
@@ -1960,7 +1880,7 @@ export function App() {
             <section className="detail-card">
               <div className="detail-card-title">Danger Zone</div>
               <p className="empty-note">
-                Remove all managed profiles, VPN users, PKI material, server config, firewall bootstrap, and runtime overrides.
+                Remove all managed profiles, VPN users, PKI material, server config, NAT bootstrap, and runtime overrides.
               </p>
               <button className="secondary-action secondary-action-wide danger-action" type="button" onClick={handleResetManagedOpenVpn}>
                 Reset managed OpenVPN
@@ -2036,130 +1956,6 @@ export function App() {
     );
   }
 
-  function renderUfwView() {
-    return (
-      <div className="view-grid">
-        <section className="detail-card">
-          <div className="detail-card-title">UFW Runtime</div>
-          <div className={`certificate-pill${ufw.status === "active" ? "" : " certificate-pill-muted"}`}>
-            <IconShieldCheck size={18} stroke={1.8} />
-            {ufw.installed ? `UFW ${ufw.status}` : "UFW not installed"}
-          </div>
-          <dl className="detail-grid compact-grid">
-            <div><dt>Status</dt><dd>{ufw.status}</dd></div>
-            <div><dt>Logging</dt><dd>{ufw.logging}</dd></div>
-            <div><dt>Default Incoming</dt><dd>{ufw.defaultIncoming}</dd></div>
-            <div><dt>Default Outgoing</dt><dd>{ufw.defaultOutgoing}</dd></div>
-            <div><dt>Default Routed</dt><dd>{ufw.defaultRouted}</dd></div>
-            <div><dt>New Profiles</dt><dd>{ufw.newProfiles}</dd></div>
-            <div><dt>Rule Count</dt><dd>{ufw.ruleCount}</dd></div>
-          </dl>
-          <div className="action-row action-row-top">
-            <button className="primary-action compact-action" type="button" onClick={() => handleUfwControl("enable")} disabled={!ufw.installed}>
-              Enable
-            </button>
-            <button className="secondary-action compact-action" type="button" onClick={() => handleUfwControl("reload")} disabled={!ufw.installed}>
-              Reload
-            </button>
-            <button className="secondary-action compact-action" type="button" onClick={() => handleUfwControl("disable")} disabled={!ufw.installed}>
-              Disable
-            </button>
-          </div>
-        </section>
-
-        <section className="detail-card">
-          <div className="detail-card-title">Add Rule</div>
-          <form className="modal-form" onSubmit={handleCreateUfwRule}>
-            <div className="modal-two-col">
-              <label>
-                <span>Rule mode</span>
-                <select value={ufwRuleForm.mode} onChange={(event) => setUfwRuleForm((current) => ({ ...current, mode: event.target.value }))}>
-                  <option value="host">Host rule</option>
-                  <option value="route">Route rule</option>
-                </select>
-              </label>
-              <label>
-                <span>Action</span>
-                <select value={ufwRuleForm.action} onChange={(event) => setUfwRuleForm((current) => ({ ...current, action: event.target.value }))}>
-                  <option value="allow">allow</option>
-                  <option value="deny">deny</option>
-                  <option value="reject">reject</option>
-                  <option value="limit">limit</option>
-                </select>
-              </label>
-            </div>
-            <div className="modal-two-col">
-              <label>
-                <span>Protocol</span>
-                <select value={ufwRuleForm.protocol} onChange={(event) => setUfwRuleForm((current) => ({ ...current, protocol: event.target.value }))}>
-                  <option value="tcp">tcp</option>
-                  <option value="udp">udp</option>
-                  <option value="any">any</option>
-                </select>
-              </label>
-              <label>
-                <span>Port</span>
-                <input value={ufwRuleForm.port} onChange={(event) => setUfwRuleForm((current) => ({ ...current, port: event.target.value }))} placeholder="80 or 10000:10100" />
-              </label>
-            </div>
-            <label>
-              <span>Source</span>
-              <input value={ufwRuleForm.source} onChange={(event) => setUfwRuleForm((current) => ({ ...current, source: event.target.value }))} placeholder="any or 10.8.0.0/24" />
-            </label>
-            <label>
-              <span>Destination</span>
-              <input value={ufwRuleForm.destination} onChange={(event) => setUfwRuleForm((current) => ({ ...current, destination: event.target.value }))} placeholder="any or 10.8.0.1" />
-            </label>
-            <div className="modal-two-col">
-              <label>
-                <span>In interface</span>
-                <input
-                  value={ufwRuleForm.inInterface}
-                  onChange={(event) => setUfwRuleForm((current) => ({ ...current, inInterface: event.target.value }))}
-                  placeholder="tun0"
-                  disabled={ufwRuleForm.mode !== "route"}
-                />
-              </label>
-              <label>
-                <span>Out interface</span>
-                <input
-                  value={ufwRuleForm.outInterface}
-                  onChange={(event) => setUfwRuleForm((current) => ({ ...current, outInterface: event.target.value }))}
-                  placeholder="enp1s0"
-                  disabled={ufwRuleForm.mode !== "route"}
-                />
-              </label>
-            </div>
-            <div className="ufw-preview">{buildUfwPreview(ufwRuleForm)}</div>
-            <button type="submit" className="primary-action" disabled={!ufw.installed}>Add UFW rule</button>
-          </form>
-        </section>
-
-        <section className="detail-card ufw-rules-card">
-          <div className="detail-card-title">Current Rules</div>
-          {ufw.rules.length ? (
-            <div className="ufw-rule-list">
-              {ufw.rules.map((rule) => (
-                <div key={rule.index} className="ufw-rule-row">
-                  <div className="ufw-rule-copy">
-                    <strong>#{rule.index} {rule.action}</strong>
-                    <span>To: {rule.to}</span>
-                    <span>From: {rule.from}</span>
-                  </div>
-                  <button className="secondary-action danger-action compact-action" type="button" onClick={() => handleDeleteUfwRule(rule.index)}>
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-note">No active UFW rules found.</div>
-          )}
-        </section>
-      </div>
-    );
-  }
-
   function renderSettingsView() {
     return (
       <div className="view-grid">
@@ -2186,13 +1982,9 @@ export function App() {
           <dl className="detail-grid compact-grid">
             <div><dt>PKI</dt><dd>{pki.initialized ? "Initialized" : "Not initialized"}</dd></div>
             <div><dt>Server Runtime</dt><dd>{pki.serverServiceState}</dd></div>
-            <div><dt>Firewall Runtime</dt><dd>{pki.firewallServiceState}</dd></div>
             <div><dt>NAT</dt><dd>{pki.natConfigured ? "Configured" : "Missing"}</dd></div>
           </dl>
           <div className="action-column">
-            <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("ufw")}>
-              Open UFW workspace
-            </button>
             <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("certificates")}>
               Open certificates workspace
             </button>
@@ -2231,7 +2023,7 @@ export function App() {
             <div className="dashboard-kicker">End-to-end server checks</div>
             <h2>{hasResult ? `Diagnostic result: ${diagnostics.overall}` : "Trace the complete VPN data path"}</h2>
             <p>
-              Tests the OpenVPN service, forwarding, NAT, firewall routes, DNS, Pi-hole, HTTPS/TLS and a DF path-MTU ladder.
+              Tests the OpenVPN service, forwarding, NAT, DNS, Pi-hole, HTTPS/TLS and a DF path-MTU ladder.
             </p>
           </div>
           <button className="primary-action compact-action" type="button" onClick={handleRunDiagnostics} disabled={diagnosticsRunning}>
@@ -2302,12 +2094,12 @@ export function App() {
           ? "stale"
           : "live";
     const liveStateLabel = liveState === "live"
-      ? "Live telemetry"
+      ? "Live-Daten"
       : liveState === "stale"
-        ? "Delayed data"
+        ? "Verzögerte Daten"
         : liveState === "partial"
-          ? "Partial telemetry"
-          : "Last known state";
+          ? "Teilweise Daten"
+          : "Letzter Stand";
     const dataPath = [
       {
         label: "OpenVPN server",
@@ -2318,20 +2110,14 @@ export function App() {
       {
         label: "Forwarding path",
         detail: `${pki.forwardingEnabled ? "IP forwarding" : "Forwarding off"} · ${pki.natConfigured ? "NAT ready" : "NAT missing"}`,
-        state: pki.vpnRoutingAllowed ? "ready" : "blocked",
-        tone: pki.forwardingEnabled && pki.natConfigured && pki.vpnRoutingAllowed ? "ok" : "warning",
-      },
-      {
-        label: "Firewall",
-        detail: `${pki.firewallBackend} · ${pki.vpnPortAllowed ? "VPN port allowed" : "VPN port blocked"}`,
-        state: pki.firewallServiceState,
-        tone: pki.firewallServiceState === "active" && pki.vpnPortAllowed ? "ok" : "warning",
+        state: pki.forwardingEnabled && pki.natConfigured ? "ready" : "incomplete",
+        tone: pki.forwardingEnabled && pki.natConfigured ? "ok" : "warning",
       },
       {
         label: "DNS for clients",
         detail: pki.dnsMode === "pihole" ? `Pi-hole ${pki.vpnGatewayDns}` : `Resolver ${pki.effectiveDnsServer}`,
         state: pki.dnsMode === "pihole" ? pki.piHoleServiceState : "configured",
-        tone: pki.dnsMode !== "pihole" || (pki.piHoleServiceState === "active" && pki.vpnDnsAllowed) ? "ok" : "warning",
+        tone: pki.dnsMode !== "pihole" || pki.piHoleServiceState === "active" ? "ok" : "warning",
       },
     ];
 
@@ -2366,61 +2152,83 @@ export function App() {
     }
 
     return (
-      <div className="view-stack dashboard-view">
+      <div className="view-stack dashboard-view dashboard-redesign">
         {liveState !== "live" && <div className="ops-notice" role="status">
-          <div><strong>{mode === "offline" ? "Connection lost" : "Measurements are incomplete or delayed"}</strong>
-          <p>Last response {observedAge ?? "--"}s ago. VPN status age: {sampleAge ?? "--"}s. Displayed values are the last received state.</p></div>
-          <button type="button" className="secondary-action compact-action" onClick={refreshDashboard}>Retry</button>
+          <div><strong>{mode === "offline" ? "Verbindung unterbrochen" : "Messwerte sind unvollständig oder verzögert"}</strong>
+          <p>Letzte Antwort vor {observedAge ?? "--"} s. VPN-Status vor {sampleAge ?? "--"} s. Angezeigt wird der zuletzt empfangene Stand.</p></div>
+          <button type="button" className="secondary-action compact-action" onClick={refreshDashboard}>Erneut versuchen</button>
         </div>}
-        <section className="dashboard-command-bar">
+        <header className="vpn-overview-heading">
           <div>
-            <div className="dashboard-kicker">Operations console</div>
-            <h2>{pki.serverName} <span>·</span> {pki.publicHost || "host pending"}</h2>
-            <p>VPN state, host pressure and data-path readiness. Sampling every {Math.round(DASHBOARD_POLL_MS / 1000)} seconds.</p>
+            <div className="dashboard-kicker">OpenVPN · Frankfurt</div>
+            <h2>VPN-Betrieb</h2>
+            <p>{pki.publicHost || pki.serverName} · Zustandsdaten werden alle {Math.round(DASHBOARD_POLL_MS / 1000)} Sekunden aktualisiert.</p>
           </div>
-          <div className="dashboard-command-actions">
+          <div className="vpn-overview-actions">
             <span className={`dashboard-live-state dashboard-live-state-${liveState}`}>
               <span aria-hidden="true" />
               {liveStateLabel}
             </span>
-            <button className="secondary-action compact-action" type="button" onClick={() => setActiveView("diagnostics")}>
-              Diagnostics
-            </button>
-            <button className="primary-action compact-action" type="button" onClick={openCreateModal}><IconPlus size={15} /> New profile</button>
+            <button className="secondary-action compact-action" type="button" onClick={() => setActiveView("diagnostics")}>Diagnose</button>
+          </div>
+        </header>
+
+        <section className="vpn-facts" aria-label="Aktueller VPN-Status">
+          <div className="vpn-fact">
+            <span>VPN-Dienst</span>
+            <strong className={pki.serverServiceState === "active" ? "vpn-fact-active" : "vpn-fact-warning"}>{pki.serverServiceState === "active" ? "Aktiv" : pki.serverServiceState}</strong>
+            <small>{pki.protocol.toUpperCase()} · Port {pki.port}</small>
+          </div>
+          <div className="vpn-fact"><span>Host</span><strong>{pki.publicHost || pki.serverName}</strong><small>{pki.serverName}</small></div>
+          <div className="vpn-fact"><span>Tunnelnetz</span><strong>{pki.tunnelNetwork}</strong><small>{runtimeTelemetry.tunnelInterface.name || "tun0"}</small></div>
+          <div className="vpn-fact"><span>Profile</span><strong>{profileCount} importiert</strong><small>{issuedCount} {issuedCount === 1 ? "ausgestelltes Zertifikat" : "ausgestellte Zertifikate"}</small></div>
+          <div className="vpn-fact"><span>Verbundene Clients</span><strong>{runtime.connectedClients}</strong><small>{runtime.routedClients} geroutet</small></div>
+          <div className="vpn-fact"><span>Datenstand</span><strong>{observedAge === null ? "Wird geladen" : `vor ${observedAge} s`}</strong><small>{runtimeTelemetry.hasSystemTelemetry ? "Live-Telemetrie" : "Telemetrie nicht verfügbar"}</small></div>
+        </section>
+
+        <section className="vpn-topology" aria-labelledby="vpn-topology-title">
+          <div className="vpn-section-heading">
+            <h3 id="vpn-topology-title">VPN-Verbindung</h3>
+            <button className="text-button" type="button" onClick={() => setActiveView("topology")}>Topologie öffnen <IconArrowRight size={16} /></button>
+          </div>
+          {selectedProfile ? <div className="vpn-connection-flow">
+            <article className="vpn-endpoint">
+              <span className="vpn-endpoint-icon"><IconServer2 size={28} stroke={1.7} /></span>
+              <div><span className="vpn-endpoint-label">Server</span><strong>{pki.serverName}</strong><small>{pki.vpnGatewayDns} · {runtimeTelemetry.tunnelInterface.name || "tun0"}</small></div>
+            </article>
+            <div className="vpn-link">
+              <span aria-hidden="true" />
+              <div className="vpn-tunnel-mark"><IconLock size={19} stroke={1.8} /></div>
+              <span aria-hidden="true" />
+              <strong>{isIssuedProfile(selectedProfile) ? "OpenVPN-Client-Profil" : "OpenVPN-Tunnel"}</strong>
+              <small>{isIssuedProfile(selectedProfile) ? "Bereit zur Installation" : `${pki.protocol.toUpperCase()} · Port ${pki.port}`}</small>
+            </div>
+            <article className="vpn-endpoint vpn-profile-endpoint">
+              <span className="vpn-endpoint-icon"><IconDeviceLaptop size={28} stroke={1.7} /></span>
+              <div><span className="vpn-endpoint-label">Profil</span><strong>{selectedProfile.name}</strong><small>{profileSummaryGerman(selectedProfile)}</small></div>
+            </article>
+          </div> : <div className="vpn-no-profile"><p>Es ist noch kein OpenVPN-Profil ausgewählt.</p><button className="secondary-action compact-action" type="button" onClick={openImportModal}><IconUpload size={15} /> Profil importieren</button></div>}
+          <div className="vpn-topology-footer">
+            <div><IconCircleFilled size={9} fill="currentColor" stroke={0} /><span>Server {pki.serverServiceState === "active" ? "aktiv" : pki.serverServiceState}</span></div>
+            <span>{profileCount} {profileCount === 1 ? "Profil importiert" : "Profile importiert"}</span>
+            <span>{runtime.connectedClients} verbundene Clients</span>
+            {selectedProfile && <button className="primary-action compact-action" type="button" onClick={() => isIssuedProfile(selectedProfile) ? handleDownloadProfile(selectedProfile.id) : handleConnection(selectedProfile.status === "connected" ? "disconnect" : "connect")}>
+              {isIssuedProfile(selectedProfile) ? <IconDownload size={15} /> : selectedProfile.status === "connected" ? <IconPlayerPause size={15} /> : <IconArrowRight size={15} />}
+              {isIssuedProfile(selectedProfile) ? "Profil herunterladen" : selectedProfile.status === "connected" ? "Verbindung trennen" : "Profil verbinden"}
+            </button>}
           </div>
         </section>
 
-        <section className="dashboard-stat-grid">
-          <DashboardStatCard
-            icon={IconActivityHeartbeat}
-            label="Active sessions"
-            value={String(runtime.connectedClients)}
-            note={`${runtime.routedClients} routed · ${pki.activeUserCount}/${pki.userCount || 0} issued users`}
-            tone={runtime.connectedClients ? "active" : "default"}
-          />
-          <DashboardStatCard
-            icon={IconWaveSine}
-            label="Tunnel traffic"
-            value={formatRate(runtimeTelemetry.latestThroughput.combinedRate)}
-            note={`${formatRate(runtimeTelemetry.latestThroughput.rxRate)} in · ${formatRate(runtimeTelemetry.latestThroughput.txRate)} out`}
-            tone="info"
-          />
-          <DashboardStatCard
-            icon={IconGauge}
-            label="Host CPU"
-            value={runtimeTelemetry.hasSystemTelemetry && visibleHistory.length > 1 ? formatPercentValue(runtimeTelemetry.latestResources.hostCpuPercent) : "--"}
-            note={`Load ${runtimeTelemetry.latestResources.loadOneMinute.toFixed(2)} · ${runtimeTelemetry.host.cpu.cores || "?"} cores`}
-            tone={runtimeTelemetry.latestResources.hostCpuPercent >= 85 ? "warning" : "default"}
-          />
-          <DashboardStatCard
-            icon={IconChartHistogram}
-            label="Host memory"
-            value={runtimeTelemetry.hasSystemTelemetry ? formatPercentValue(runtimeTelemetry.host.memory.usedPercent) : "--"}
-            note={`${formatBytes(runtimeTelemetry.host.memory.usedBytes)} used · disk ${formatPercentValue(runtimeTelemetry.host.disk.usedPercent)}`}
-            tone={runtimeTelemetry.host.memory.usedPercent >= 85 ? "warning" : "default"}
-          />
+        <section className="vpn-live-summary" aria-label="Live-Messwerte">
+          <div className="vpn-section-heading"><h3>Live-Messwerte</h3><span>Aktualisierung alle 5 Sekunden</span></div>
+          <div className="vpn-live-row"><span>Tunnelverkehr</span><strong>{formatRate(runtimeTelemetry.latestThroughput.combinedRate)}</strong><small>{formatRate(runtimeTelemetry.latestThroughput.rxRate)} Eingang · {formatRate(runtimeTelemetry.latestThroughput.txRate)} Ausgang</small></div>
+          <div className="vpn-live-row"><span>Host-Auslastung</span><strong>{runtimeTelemetry.hasSystemTelemetry ? `${formatPercentValue(runtimeTelemetry.host.memory.usedPercent)} RAM` : "--"}</strong><small>{runtimeTelemetry.host.cpu.cores || "--"} CPU-Kerne · Load {runtimeTelemetry.latestResources.loadOneMinute.toFixed(2)}</small></div>
+          <div className="vpn-live-row"><span>Betriebszeit</span><strong>{runtimeTelemetry.openVpnProcess.available ? formatDuration(runtimeTelemetry.openVpnProcess.serviceUptimeSeconds) : "--"}</strong><small>{runtimeTelemetry.openVpnProcess.available ? `${formatBytes(runtimeTelemetry.openVpnProcess.memoryBytes)} Prozessspeicher` : "OpenVPN-Prozess nicht erfasst"}</small></div>
         </section>
 
+        <details className="vpn-advanced-details">
+          <summary>Weitere Betriebsdaten und Diagramme</summary>
+          <div className="vpn-advanced-content">
         <div className="ops-tools">
           <span>Live measurements / {visibleHistory.length} samples / refreshed {observedAge ?? "--"}s ago</span>
           <div className="ops-range" role="group" aria-label="Chart time window">
@@ -2582,6 +2390,8 @@ export function App() {
             <div className="empty-note">{clientSearch ? "No connected clients match your search." : "No clients are connected. Their sessions will appear here automatically."}</div>
           )}
         </section>
+          </div>
+        </details>
       </div>
     );
   }
@@ -2592,7 +2402,6 @@ export function App() {
     if (activeView === "profiles") return renderProfilesView();
     if (activeView === "policies") return renderPoliciesView();
     if (activeView === "configuration") return <OpenVpnConfigurationView onStatus={setStatusMessage} onDashboard={setDashboard} />;
-    if (activeView === "ufw") return renderUfwView();
     if (activeView === "certificates") return renderCertificatesView();
     if (activeView === "logs") return renderLogsView();
     if (activeView === "settings") return renderSettingsView();
@@ -2636,7 +2445,7 @@ export function App() {
           <section className="detail-card">
             <div className="detail-card-title">Configuration Boundary</div>
             <p className="empty-note">
-              This workspace edits OpenVPN configuration files. UFW exposure, NAT, forwarding and Pi-hole remain independently controlled to prevent hidden host-level changes.
+              This workspace edits OpenVPN configuration files. NAT, forwarding and Pi-hole settings remain explicit so host-level changes stay reviewable.
             </p>
             <dl className="detail-grid compact-grid">
               <div><dt>Catalog</dt><dd>Installed OpenVPN build</dd></div>
@@ -2661,7 +2470,6 @@ export function App() {
           <section className="detail-card">
             <div className="detail-card-title">Related Host Controls</div>
             <div className="action-column">
-              <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("ufw")}>Open UFW workspace</button>
               <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("diagnostics")}>Run VPN diagnostics</button>
             </div>
           </section>
@@ -2675,7 +2483,7 @@ export function App() {
           <section className="detail-card">
             <div className="detail-card-title">Diagnostic Scope</div>
             <p className="empty-note">
-              These checks run on the VPN server. They prove server egress and control-plane state, but cannot directly inspect a remote client's browser or local firewall.
+              These checks run on the VPN server. They prove server egress and control-plane state, but cannot directly inspect a remote client's browser or local network.
             </p>
             <dl className="detail-grid compact-grid">
               <div><dt>OpenVPN</dt><dd>Service + runtime</dd></div>
@@ -2706,14 +2514,9 @@ export function App() {
           value: pki.serverServiceState,
         },
         {
-          label: "Firewall service",
-          tone: pki.firewallServiceState === "active" ? "ok" : "warn",
-          value: pki.firewallServiceState,
-        },
-        {
           label: "Forwarding + NAT",
-          tone: pki.forwardingEnabled && pki.natConfigured && pki.vpnRoutingAllowed ? "ok" : "warn",
-          value: pki.forwardingEnabled && pki.natConfigured && pki.vpnRoutingAllowed ? "ready" : "incomplete",
+          tone: pki.forwardingEnabled && pki.natConfigured ? "ok" : "warn",
+          value: pki.forwardingEnabled && pki.natConfigured ? "ready" : "incomplete",
         },
         {
           label: "VPN DNS",
@@ -2784,8 +2587,6 @@ export function App() {
               <div><dt>Updated</dt><dd>{runtime.updatedAt || "Never"}</dd></div>
               <div><dt>Broadcast Queue</dt><dd>{runtime.maxBroadcastQueue || "unknown"}</dd></div>
               <div><dt>DCO</dt><dd>{runtime.dcoEnabled || "unknown"}</dd></div>
-              <div><dt>VPN Port</dt><dd>{pki.vpnPortAllowed ? "Allowed" : "Blocked"}</dd></div>
-              <div><dt>UI Reachability</dt><dd>{pki.uiPortAllowed ? "Allowed" : "Blocked"}</dd></div>
             </dl>
             <div className="action-column">
               <button className="primary-action secondary-action-wide" type="button" onClick={() => setActiveView("diagnostics")}>
@@ -2794,42 +2595,7 @@ export function App() {
               <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("certificates")}>
                 Open certificates workspace
               </button>
-              <button className="secondary-action secondary-action-wide" type="button" onClick={() => setActiveView("ufw")}>
-                Open UFW workspace
-              </button>
             </div>
-          </section>
-        </>
-      );
-    }
-
-    if (activeView === "ufw") {
-      return (
-        <>
-          <section className="detail-card">
-            <div className="detail-card-title">UFW Guide</div>
-            <p className="empty-note">
-              Use host rules for ordinary port exposure and route rules for forwarded VPN traffic between interfaces.
-            </p>
-            <dl className="detail-grid compact-grid">
-              <div><dt>Suggested VPN In</dt><dd>tun0</dd></div>
-              <div><dt>Detected Egress</dt><dd>{pki.egressInterface || "Unavailable"}</dd></div>
-              <div><dt>OpenVPN UI</dt><dd>{"10.8.0.0/24 -> 8080/tcp"}</dd></div>
-              <div><dt>Pi-hole UI</dt><dd>{"10.8.0.0/24 -> 80/tcp"}</dd></div>
-              <div><dt>VPN DNS</dt><dd>{"10.8.0.0/24 -> 53/tcp+udp"}</dd></div>
-            </dl>
-          </section>
-
-          <section className="detail-card">
-            <div className="detail-card-title">Firewall Health</div>
-            <dl className="detail-grid compact-grid">
-              <div><dt>UFW</dt><dd>{ufw.status}</dd></div>
-              <div><dt>Rule Count</dt><dd>{ufw.ruleCount}</dd></div>
-              <div><dt>VPN Port</dt><dd>{pki.vpnPortAllowed ? "Allowed" : "Blocked"}</dd></div>
-              <div><dt>OpenVPN UI</dt><dd>{pki.uiPortAllowed ? "Allowed" : "Blocked"}</dd></div>
-              <div><dt>Pi-hole UI</dt><dd>{pki.piHoleUiAllowed ? "Allowed" : "Blocked"}</dd></div>
-              <div><dt>VPN DNS</dt><dd>{pki.vpnDnsAllowed ? "Allowed" : "Blocked"}</dd></div>
-            </dl>
           </section>
         </>
       );
@@ -2937,15 +2703,15 @@ export function App() {
 
         <div className="mobile-control-bar">
           <label className="mobile-control-field">
-            <span>Workspace</span>
+            <span>Bereich</span>
             <select value={activeView} onChange={(event) => setActiveView(event.target.value)}>
               {dashboard.navigation.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
+              <option key={item.id} value={item.id}>{navLabelsGerman[item.id] ?? item.label}</option>
               ))}
             </select>
           </label>
           <label className="mobile-control-field">
-            <span>Profile</span>
+            <span>Profil</span>
             <select
               value={selectedProfile?.id ?? ""}
               onChange={(event) => {
@@ -2961,14 +2727,14 @@ export function App() {
               ))}
             </select>
           </label>
-          <button className="mobile-control-create" type="button" onClick={openCreateModal} aria-label="Create profile">
+          <button className="mobile-control-create" type="button" onClick={openCreateModal} aria-label="Profil erstellen">
             <IconPlus size={18} />
           </button>
         </div>
 
         <div className="profiles-panel">
           <div className="panel-header">
-            <span>Profiles &amp; Sites</span>
+            <span>Profile &amp; Standorte</span>
             <button className="icon-button" type="button" onClick={openCreateModal} aria-label="Create profile">
               <IconPlus size={17} />
             </button>
@@ -2976,12 +2742,12 @@ export function App() {
 
           <label className="search-box">
             <IconSearch size={16} />
-            <input type="search" placeholder="Search profiles..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+            <input type="search" placeholder="Profile suchen …" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
           </label>
 
           {filteredGroups.filter((group) => group.profileIds.length > 0).map((group) => (
             <section key={group.id} className="group-block">
-              <div className="group-title">{group.label}</div>
+              <div className="group-title">{profileGroupLabelsGerman[group.id] ?? group.label}</div>
               <div className="group-list">
                 {group.profileIds.length ? (
                   group.profileIds.map((profileId) => {
@@ -3006,21 +2772,21 @@ export function App() {
                           <span className="profile-name">{profile.name}</span>
                           <span className={`profile-state profile-state-${statusTone(profile.status)}`}>
                             <IconCircleFilled size={8} fill="currentColor" stroke={0} />
-                            {profileSummary(profile)}
+                            {profileSummaryGerman(profile)}
                           </span>
                         </span>
                       </button>
                     );
                   })
                 ) : (
-                  <div className="empty-note">Empty</div>
+                  <div className="empty-note">Keine Profile</div>
                 )}
               </div>
             </section>
           ))}
         </div>
 
-        <nav className="secondary-nav" aria-label="Main navigation">
+        <nav className="secondary-nav" aria-label="Hauptnavigation">
           {dashboard.navigation.map((item) => {
             const NavIcon = navIcons[item.id] ?? IconSettings;
             const active = item.id === activeView;
@@ -3033,7 +2799,7 @@ export function App() {
                 onClick={() => setActiveView(item.id)}
               >
                 <NavIcon size={18} stroke={1.8} />
-                <span>{item.label}</span>
+                <span>{navLabelsGerman[item.id] ?? item.label}</span>
               </button>
             );
           })}
@@ -3043,10 +2809,10 @@ export function App() {
       </aside>
 
       <div className="workspace">
-        <header className="top-bar">
+        <header className={`top-bar${activeView === "dashboard" ? " top-bar-dashboard" : ""}`}>
           <h1>{viewTitles[activeView]}</h1>
           <div className="top-bar-right">
-            <span>{dashboard.generatedAt}</span>
+            <span>{activeView === "dashboard" ? `Stand: ${formatDashboardTimestamp(dashboard.generatedAt)}` : dashboard.generatedAt}</span>
             <button className="icon-button subtle" type="button" aria-label="Refresh" onClick={refreshDashboard}>
               <IconRefresh size={17} />
             </button>
@@ -3066,8 +2832,8 @@ export function App() {
           </aside>}
         </main>
         <div className="app-status" role="status">
-          <span className={`status-pill status-pill-${mode}`}>{mode === "connecting" ? "CONNECTING" : feedStale ? "OFFLINE / DELAYED" : "LIVE SERVER"}</span>
-          <span>{statusMessage}</span>
+          <span className={`status-pill status-pill-${mode}`}>{mode === "connecting" ? "VERBINDE …" : feedStale ? "SERVERDATEN VERZÖGERT" : "LIVE-SERVER"}</span>
+          <span>{statusMessage === "Backend connected. Controls operate against the server runtime." ? "Backend verbunden. Aktionen steuern den Server." : statusMessage === "Backend connected. No profiles imported yet." ? "Backend verbunden. Noch keine Profile importiert." : statusMessage === "Waiting for backend connection." ? "Warte auf Backend-Verbindung." : statusMessage === "Backend unavailable. Controls are read-only until it responds." ? "Backend nicht erreichbar. Bis zur Antwort sind die Aktionen schreibgeschützt." : statusMessage}</span>
         </div>
       </div>
 
